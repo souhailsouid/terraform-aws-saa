@@ -40,5 +40,5 @@ variable "environment" {
 variable "instance_type" { default = "t3.nano" }
 variable "ami" { default = "ami-03601e822a943105f" }
 variable "vpc_id" { default = "vpc-01c48ae5d78b50401" }
-variable "subnet_id_a" { default = "subnet-0a70919ea988bc34e" }
+variable "subnet_id_a" { default = "subnet-060790e0b0642eca0" }
 variable "subnet_id_b" { default = "subnet-0c916e4290d9491ce" }
