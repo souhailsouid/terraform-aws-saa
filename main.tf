@@ -1,7 +1,7 @@
 resource "aws_security_group" "web_sg" {
   name        = "ec2-web-sg"
   description = "Allow SSH and HTTP"
-  vpc_id      = "vpc-01c48ae5d78b50401" # à récupérer (default VPC ou ton module VPC)
+  vpc_id      = var.vpc_id # à récupérer (default VPC ou ton module VPC)
 
   ingress {
     from_port   = 22
@@ -10,13 +10,13 @@ resource "aws_security_group" "web_sg" {
     cidr_blocks = ["194.98.67.99/32"]
   }
 
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
+ ingress {
+  from_port                = 80
+  to_port                  = 80
+  protocol                 = "tcp"
+  security_groups          = [aws_security_group.alb_sg.id]
+  description              = "HTTP from ALB only"
+}
   egress {
     from_port   = 0
     to_port     = 0
@@ -44,9 +44,9 @@ resource "aws_iam_role_policy_attachment" "ec2_role_attach" {
 
 
 resource "aws_instance" "web" {
-  ami                    = "ami-03601e822a943105f" # Amazon Linux 2 dans ta région
-  instance_type          = "t3.nano"
-  subnet_id              = "subnet-0a70919ea988bc34e" # public subnet
+  ami                    = var.ami
+  instance_type          = var.instance_type
+  subnet_id              = var.subnet_id_a # public subnet
   vpc_security_group_ids = [aws_security_group.web_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
   key_name               = "myArchitectureKeyPair"
@@ -92,7 +92,10 @@ resource "aws_instance" "web" {
     delete_on_termination = true
   }
 
-  tags = { Name = "saa-dev-ec2" }
+  tags = {
+    Name = "saa-dev-ec2"
+    TTL  = "1h"   # ← ici
+  }
 }
 
 resource "aws_iam_instance_profile" "ec2_profile" {
@@ -107,7 +110,7 @@ resource "aws_ebs_volume" "data" {
   size              = 8
   type              = "gp3"
   encrypted         = true
-  tags              = { Name = "saa-dev-ec2-data" }
+  tags              = { Name = "saa-dev-ec2-data", TTL = "1h" }
 }
 
 # Attacher le volume /dev/xvdb à l'instance
@@ -115,4 +118,99 @@ resource "aws_volume_attachment" "data_attach" {
   device_name = "/dev/xvdb"
   volume_id   = aws_ebs_volume.data.id
   instance_id = aws_instance.web.id
+}
+
+# Nouveau SG pour l'ALB (ouvre HTTP au monde)
+resource "aws_security_group" "alb_sg" {
+  name        = "alb-sg"
+  description = "Allow HTTP from the Internet"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = { Name = "alb-sg" }
+}
+
+
+resource "aws_instance" "web2" {
+  ami                    = var.ami
+  instance_type          = var.instance_type
+  subnet_id              = var.subnet_id_b
+  vpc_security_group_ids = [aws_security_group.web_sg.id]
+  iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
+  key_name               = "myArchitectureKeyPair"
+
+  # même user_data que web (serveur httpd)
+  user_data = aws_instance.web.user_data
+
+  tags = {
+    Name = "saa-dev-ec2-2"
+    TTL  = "1h"
+  }
+}
+
+# alb 
+# Application Load Balancer
+resource "aws_lb" "app" {
+  name               = "demo-alb"
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb_sg.id]
+  subnets            = [var.subnet_id_a, var.subnet_id_b]  # 2 subnets publics (AZ différentes)
+  tags = { Name = "demo-alb", TTL = "1h" }
+}
+
+# Target Group (instances, HTTP:80)
+resource "aws_lb_target_group" "tg" {
+  name     = "demo-tg-alb"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = var.vpc_id
+
+  health_check {
+    path                = "/"
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    timeout             = 5
+    interval            = 10
+    matcher             = "200"
+  }
+
+  tags = { Name = "demo-tg-alb" }
+}
+
+# Attacher les 2 EC2 au Target Group
+resource "aws_lb_target_group_attachment" "tg_web1" {
+  target_group_arn = aws_lb_target_group.tg.arn
+  target_id        = aws_instance.web.id
+  port             = 80
+}
+
+resource "aws_lb_target_group_attachment" "tg_web2" {
+  target_group_arn = aws_lb_target_group.tg.arn
+  target_id        = aws_instance.web2.id
+  port             = 80
+}
+
+# Listener HTTP 80 → forward vers le TG
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.app.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.tg.arn
+  }
 }

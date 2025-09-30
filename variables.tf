@@ -1,6 +1,7 @@
 variable "aws_region" {
-  type    = string
-  default = "eu-west-3"
+  description = "AWS region"
+  type        = string
+  default     = "eu-west-3"
 }
 
 variable "vpc_name" {
@@ -34,3 +35,10 @@ variable "environment" {
   description = "Infrastructure environment. eg. dev, prod, etc"
   default     = "test"
 }
+
+
+variable "instance_type" { default = "t3.nano" }
+variable "ami" { default = "ami-03601e822a943105f" }
+variable "vpc_id" { default = "vpc-01c48ae5d78b50401" }
+variable "subnet_id_a" { default = "subnet-0a70919ea988bc34e" }
+variable "subnet_id_b" { default = "subnet-0c916e4290d9491ce" }

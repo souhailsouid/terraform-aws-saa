@@ -1,11 +1,39 @@
-# My App
+# Terraform AWS SAA
 
-In this repo, you'll find a quick and easy app to get started using [Terraform Cloud](https://app.terraform.io/) with [GitHub](https://github.com/).
+In this repo, you'll find a quick and easy app to get started using [Terraform Cloud](https://app.terraform.io/) with AWS.
+
+## Configuration
+
+1. Copiez le fichier template:
+   ```bash
+   cp terraform.tf.example terraform.tf
+   ```
+
+2. Modifiez `terraform.tf` avec vos valeurs:
+   - organization
+   - workspace name
+   - région AWS si différente
+
+3. Dans Terraform Cloud:
+   - Créez un workspace
+   - Ajoutez les variables d'environnement:
+     - AWS_ACCESS_KEY_ID (Sensitive: Yes)
+     - AWS_SECRET_ACCESS_KEY (Sensitive: Yes)
+
+## Infrastructure
+
+Cette configuration crée:
+- Une instance EC2 avec Apache
+- Un volume EBS pour les données
+- Les groupes de sécurité nécessaires
+- Les rôles IAM requis
 
 ## Version Control Workflow
 
-Once multiple people are collaborating on Terraform configuration, new steps must be added to the core Terraform workflow (Write, Plan, Apply) to ensure everyone is working together smoothly. In order for different teams and individuals to be able to work on the same Terraform code, you need to use a Version Control System (VCS). The Terraform Cloud VCS or version control system workflow includes the most common steps necessary to work in a collaborative nature, but it also requires that you host the Terraform code in a VCS repository. Events on the repository will trigger workflows on Terraform Cloud. For instance, a commit to the default branch could kick off a plan and apply workflow in Terraform Cloud.
+Le workflow utilise Terraform Cloud avec GitHub. Les commits sur la branche principale déclenchent automatiquement les plans Terraform.
 
-## Master Terraform by taking a Hands-On Approach
+## Notes de sécurité
 
-Check out the 70+ labs that follow the HashiCorp Certified: Terraform Associate certification. Learn more at https://www.udemy.com/course/terraform-hands-on-labs# terraform-aws-saa
+- Ne committez jamais `terraform.tf` avec des informations sensibles
+- Utilisez toujours des variables d'environnement pour les credentials
+- Gardez les clés SSH et autres secrets hors du contrôle de version
