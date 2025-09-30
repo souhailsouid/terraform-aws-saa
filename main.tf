@@ -214,3 +214,23 @@ resource "aws_lb_listener" "http" {
     target_group_arn = aws_lb_target_group.tg.arn
   }
 }
+
+resource "aws_lb_listener_rule" "error_rule" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 5
+
+  action {
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Not Found - Custom Error"
+      status_code  = "404"
+    }
+  }
+
+  condition {
+    path_pattern {
+      values = ["/error"]
+    }
+  }
+}
