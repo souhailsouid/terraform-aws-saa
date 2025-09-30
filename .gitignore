@@ -31,3 +31,5 @@ override.tf.json
 tfc-getting-started/
 *.hcl
 terraform.tf
+myArchitectureKeyPair.pub
+myArchitectureKeyPair.pem

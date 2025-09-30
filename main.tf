@@ -1,332 +1,118 @@
-/*
-Name: IaC Buildout for Terraform Associate Exam
-Description: AWS Infrastructure Buildout
-Contributors: Bryan and Gabe
-*/
+resource "aws_security_group" "web_sg" {
+  name        = "ec2-web-sg"
+  description = "Allow SSH and HTTP"
+  vpc_id      = "vpc-01c48ae5d78b50401" # à récupérer (default VPC ou ton module VPC)
 
-# Configure the AWS Provider
-provider "aws" {
-  region = var.aws_region
-}
-
-#Retrieve the list of AZs in the current AWS region
-data "aws_availability_zones" "available" {}
-data "aws_region" "current" {}
-
-#Define the VPC 
-resource "aws_vpc" "vpc" {
-  cidr_block = var.vpc_cidr
-
-  tags = {
-    Name        = var.vpc_name
-    Environment = var.environment
-    Terraform   = "true"
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["194.98.67.99/32"]
   }
 
-  enable_dns_hostnames = true
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 }
 
-#Deploy the private subnets
-# resource "aws_subnet" "private_subnets" {
-#   for_each          = var.private_subnets
-#   vpc_id            = aws_vpc.vpc.id
-#   cidr_block        = cidrsubnet(var.vpc_cidr, 8, each.value)
-#   availability_zone = tolist(data.aws_availability_zones.available.names)[each.value]
+resource "aws_iam_role" "ec2_role" {
+  name = "ec2-iam-readonly-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect    = "Allow",
+      Principal = { Service = "ec2.amazonaws.com" },
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
 
-#   tags = {
-#     Name      = each.key
-#     Terraform = "true"
-#   }
-# }
-
-#Deploy the public subnets
-# resource "aws_subnet" "public_subnets" {
-#   for_each                = var.public_subnets
-#   vpc_id                  = aws_vpc.vpc.id
-#   cidr_block              = cidrsubnet(var.vpc_cidr, 8, each.value + 100)
-#   availability_zone       = tolist(data.aws_availability_zones.available.names)[each.value]
-#   map_public_ip_on_launch = true
-
-#   tags = {
-#     Name      = each.key
-#     Terraform = "true"
-#   }
-# }
-
-#Create route tables for public and private subnets
-# resource "aws_route_table" "public_route_table" {
-#   vpc_id = aws_vpc.vpc.id
-
-#   route {
-#     cidr_block = "0.0.0.0/0"
-#     gateway_id = aws_internet_gateway.internet_gateway.id
-#     #nat_gateway_id = aws_nat_gateway.nat_gateway.id
-#   }
-#   tags = {
-#     Name      = "demo_public_rtb"
-#     Terraform = "true"
-#   }
-# }
-
-# resource "aws_route_table" "private_route_table" {
-#   vpc_id = aws_vpc.vpc.id
-
-#   route {
-#     cidr_block = "0.0.0.0/0"
-#     # gateway_id     = aws_internet_gateway.internet_gateway.id
-#     nat_gateway_id = aws_nat_gateway.nat_gateway.id
-#   }
-#   tags = {
-#     Name      = "demo_private_rtb"
-#     Terraform = "true"
-#   }
-# }
-
-#Create route table associations
-# resource "aws_route_table_association" "public" {
-#   depends_on     = [aws_subnet.public_subnets]
-#   route_table_id = aws_route_table.public_route_table.id
-#   for_each       = aws_subnet.public_subnets
-#   subnet_id      = each.value.id
-# }
-
-# resource "aws_route_table_association" "private" {
-#   depends_on     = [aws_subnet.private_subnets]
-#   route_table_id = aws_route_table.private_route_table.id
-#   for_each       = aws_subnet.private_subnets
-#   subnet_id      = each.value.id
-# }
-# 
-#Create Internet Gateway
-# resource "aws_internet_gateway" "internet_gateway" {
-#   vpc_id = aws_vpc.vpc.id
-#   tags = {
-#     Name = "demo_igw"
-#   }
-# }
-
-#Create EIP for NAT Gateway
-# resource "aws_eip" "nat_gateway_eip" {
-#   domain     = "vpc"
-#   depends_on = [aws_internet_gateway.internet_gateway]
-#   tags = {
-#     Name = "demo_igw_eip"
-#   }
-# }
-
-#Create NAT Gateway
-# resource "aws_nat_gateway" "nat_gateway" {
-#   depends_on    = [aws_subnet.public_subnets]
-#   allocation_id = aws_eip.nat_gateway_eip.id
-#   subnet_id     = aws_subnet.public_subnets["public_subnet_1"].id
-#   tags = {
-#     Name = "demo_nat_gateway"
-#   }
-# }
+resource "aws_iam_role_policy_attachment" "ec2_role_attach" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/IAMReadOnlyAccess"
+}
 
 
-# resource "random_string" "random" {
-#   length = 10
-# }
+resource "aws_instance" "web" {
+  ami                    = "ami-03601e822a943105f" # Amazon Linux 2 dans ta région
+  instance_type          = "t3.nano"
+  subnet_id              = "subnet-0a70919ea988bc34e" # public subnet
+  vpc_security_group_ids = [aws_security_group.web_sg.id]
+  iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
+  key_name               = "myArchitectureKeyPair"
 
-# Terraform Data Block - To Lookup Latest Ubuntu 20.04 AMI Image
-# data "aws_ami" "ubuntu" {
-#   most_recent = true
+  user_data = <<-EOF
+    #!/bin/bash
+    set -eux
 
-#   filter {
-#     name   = "name"
-#     values = ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
-#   }
+    # Web
+    yum update -y
+    yum install -y httpd awscli xfsprogs
+    systemctl enable --now httpd
+    echo "Hello from Terraform EC2" > /var/www/html/index.html
 
-#   filter {
-#     name   = "virtualization-type"
-#     values = ["hvm"]
-#   }
+    # === Préparer /data sur /dev/xvdb ===
+    DEVICE=/dev/xvdb
+    MOUNT=/data
 
-#   owners = ["099720109477"]
-# }
+    # Attendre que le device apparaisse (après l'attachement)
+    for i in {1..20}; do
+      if [ -b "$DEVICE" ]; then break; fi
+      sleep 3
+    done
 
-# # Terraform Resource Block - To Build EC2 instance in Public Subnet
-# # resource "aws_instance" "ubuntu_server" {
-# #   ami                         = data.aws_ami.ubuntu.id
-# #   instance_type               = "t2.micro"
-# #   subnet_id                   = aws_subnet.public_subnets["public_subnet_1"].id
-# #   security_groups             = [aws_security_group.vpc-ping.id, aws_security_group.ingress-ssh.id, aws_security_group.vpc-web.id]
-# #   associate_public_ip_address = true
-# #   key_name                    = aws_key_pair.generated.key_name
-# #   connection {
-# #     user        = "ubuntu"
-# #     private_key = tls_private_key.generated.private_key_pem
-# #     host        = self.public_ip
-# #   }
+    # Créer le FS s'il n'existe pas encore
+    if ! file -s $DEVICE | grep -qi 'filesystem'; then
+      mkfs -t xfs $DEVICE
+    fi
 
-# #   # Leave the first part of the block unchanged and create our `local-exec` provisioner
-# #   # provisioner "local-exec" {
-# #   #   command = "chmod 600 ${local_file.private_key_pem.filename}"
-# #   # }
+    mkdir -p $MOUNT
+    # Monter et rendre persistant (idempotent)
+    if ! grep -q "$DEVICE" /etc/fstab; then
+      echo "$DEVICE  $MOUNT  xfs  defaults,nofail  0  2" >> /etc/fstab
+    fi
+    mount -a
 
-# #   provisioner "remote-exec" {
-# #     inline = [
-# #       "sudo rm -rf /tmp",
-# #       "sudo git clone https://github.com/hashicorp/demo-terraform-101 /tmp",
-# #       "sudo sh /tmp/assets/setup-web.sh",
-# #     ]
-# #   }
+    echo "data volume ready: $(date)" > $MOUNT/health.txt
+  EOF
 
-# #   tags = {
-# #     Name = "Ubuntu EC2 Server"
-# #   }
+  root_block_device {
+    volume_type           = "gp3"
+    volume_size           = 8
+    delete_on_termination = true
+  }
 
-# #   lifecycle {
-# #     ignore_changes = [security_groups]
-# #   }
+  tags = { Name = "saa-dev-ec2" }
+}
+
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "ec2-iam-readonly-profile"
+  role = aws_iam_role.ec2_role.name
+}
 
 
-# # }
+# === EBS supplémentaire (8 Go, gp3, chiffré) ===
+resource "aws_ebs_volume" "data" {
+  availability_zone = aws_instance.web.availability_zone
+  size              = 8
+  type              = "gp3"
+  encrypted         = true
+  tags              = { Name = "saa-dev-ec2-data" }
+}
 
-# # Terraform Resource Block - Security Group to Allow Ping Traffic
-# resource "aws_security_group" "vpc-ping" {
-#   name        = "vpc-ping"
-#   vpc_id      = aws_vpc.vpc.id
-#   description = "ICMP for Ping Access"
-#   ingress {
-#     description = "Allow ICMP Traffic"
-#     from_port   = -1
-#     to_port     = -1
-#     protocol    = "icmp"
-#     cidr_blocks = ["0.0.0.0/0"]
-#   }
-#   egress {
-#     description = "Allow all ip and ports outbound"
-#     from_port   = 0
-#     to_port     = 0
-#     protocol    = "-1"
-#     cidr_blocks = ["0.0.0.0/0"]
-#   }
-# }
-
-# resource "tls_private_key" "generated" {
-#   algorithm = "RSA"
-# }
-
-# # resource "local_file" "private_key_pem" {
-# #   content  = tls_private_key.generated.private_key_pem
-# #   filename = "MyAWSKey.pem"
-# # }
-
-# resource "aws_key_pair" "generated" {
-#   key_name   = "MyAWSKey${var.environment}"
-#   public_key = tls_private_key.generated.public_key_openssh
-# }
-
-# resource "aws_security_group" "ingress-ssh" {
-#   name   = "allow-all-ssh"
-#   vpc_id = aws_vpc.vpc.id
-#   ingress {
-#     cidr_blocks = [
-#       "0.0.0.0/0"
-#     ]
-#     from_port = 22
-#     to_port   = 22
-#     protocol  = "tcp"
-#   }
-#   // Terraform removes the default rule
-#   egress {
-#     from_port   = 0
-#     to_port     = 0
-#     protocol    = "-1"
-#     cidr_blocks = ["0.0.0.0/0"]
-#   }
-# }
-
-# resource "aws_security_group" "vpc-web" {
-#   name        = "vpc-web-${terraform.workspace}"
-#   vpc_id      = aws_vpc.vpc.id
-#   description = "Web Traffic"
-#   ingress {
-#     description = "Allow Port 80"
-#     from_port   = 80
-#     to_port     = 80
-#     protocol    = "tcp"
-#     cidr_blocks = ["0.0.0.0/0"]
-#   }
-
-#   ingress {
-#     description = "Allow Port 443"
-#     from_port   = 443
-#     to_port     = 443
-#     protocol    = "tcp"
-#     cidr_blocks = ["0.0.0.0/0"]
-#   }
-
-#   egress {
-#     description = "Allow all ip and ports outbound"
-#     from_port   = 0
-#     to_port     = 0
-#     protocol    = "-1"
-#     cidr_blocks = ["0.0.0.0/0"]
-#   }
-# }
-
-# # Terraform Resource Block - To Build Web Server in Public Subnet
-# resource "aws_instance" "web_server" {
-#   ami                         = data.aws_ami.ubuntu.id
-#   instance_type               = "t2.medium"
-#   subnet_id                   = aws_subnet.public_subnets["public_subnet_1"].id
-#   security_groups             = [aws_security_group.vpc-ping.id, aws_security_group.ingress-ssh.id, aws_security_group.vpc-web.id]
-#   associate_public_ip_address = true
-#   key_name                    = aws_key_pair.generated.key_name
-#   connection {
-#     user        = "ubuntu"
-#     private_key = tls_private_key.generated.private_key_pem
-#     host        = self.public_ip
-#   }
-
-#   # Leave the first part of the block unchanged and create our `local-exec` provisioner
-#   # provisioner "local-exec" {
-#   #   command = "chmod 600 ${local_file.private_key_pem.filename}"
-#   # }
-
-#   provisioner "remote-exec" {
-#     inline = [
-#       "sudo rm -rf /tmp",
-#       "sudo git clone https://github.com/hashicorp/demo-terraform-101 /tmp",
-#       "sudo sh /tmp/assets/setup-web.sh",
-#     ]
-#   }
-
-#   tags = {
-#     Name = "Web EC2 Server"
-#   }
-
-#   lifecycle {
-#     ignore_changes = [security_groups]
-#   }
-
-# }
-
-# Terraform Resource Block - To Build EC2 instance in Public Subnet
-# resource "aws_instance" "web_server_2" {
-#   ami           = data.aws_ami.ubuntu.id
-#   instance_type = "t3.micro"
-#   subnet_id     = aws_subnet.public_subnets["public_subnet_2"].id
-#   tags = {
-#     Name = "Web EC2 Server 2"
-#   }
-# }
-
-# output "public_ip" {
-#   value = aws_instance.ubuntu_server.public_ip
-# }
-
-# output "public_dns" {
-#   value = aws_instance.ubuntu_server.public_dns
-# }
-
-# output "public_ip_server_subnet_1" {
-#   value = aws_instance.web_server.public_ip
-# }
-
-# output "public_dns_server_subnet_1" {
-#   value = aws_instance.web_server.public_dns
-# }
+# Attacher le volume /dev/xvdb à l'instance
+resource "aws_volume_attachment" "data_attach" {
+  device_name = "/dev/xvdb"
+  volume_id   = aws_ebs_volume.data.id
+  instance_id = aws_instance.web.id
+}
